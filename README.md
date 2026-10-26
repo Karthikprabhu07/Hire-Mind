@@ -66,7 +66,7 @@ HireMind turns a Google Drive folder into an automated screening pipeline. Every
 | Step | Stage | What happens |
 |:---:|---|---|
 | 01 | 📥 **Upload** | A new PDF resume lands in a Google Drive folder (polled every minute). |
-| 02 | 📄 **Extract** | The resume is downloaded and its text, name and email are extracted. |
+| 02 | 📄 **Extract** | The job description is loaded, then the resume is downloaded and its text, name and email are extracted. |
 | 03 | 🧠 **Screen** | Groq compares the resume to the must-have and nice-to-have requirements. |
 | 04 | 🛡️ **Verify** | Each evidence quote is checked against the resume. |
 | 05 | 🏷️ **Score** | The tier and ATS score are computed in code. |
@@ -106,20 +106,35 @@ The prompt also tells the model to ignore name, gender, age and nationality, not
 
 ## 🏛️ Architecture
 
+The diagram below mirrors the n8n workflow node for node.
+
 ```mermaid
 flowchart LR
-    A[Resume PDF<br/>uploaded to Drive] --> B[Drive Trigger]
-    B --> C[Download +<br/>Extract text]
-    C --> D[Build request]
-    D -->|Groq credential| E[Groq API]
-    E --> F[Parse + hallucination check<br/>+ tier]
-    F --> G[ATS score]
-    G --> H[Append to<br/>Google Sheet]
-    H --> I{Switch<br/>by tier}
-    I -->|strong| J[Gmail: approve?]
-    I -->|potential| J
-    I -->|weak| J
-    J -->|approved| K[Email candidate]
+    subgraph IN[1. Intake]
+        T[Google Drive Trigger<br/>file created] --> JD[Job Description<br/>Set node]
+        JD --> DL[Download Resume]
+        DL --> EX[Extract Resume Text<br/>PDF]
+        EX --> PR[Prepare Resume<br/>name, email, text]
+    end
+
+    subgraph AI[2. AI screening]
+        BR[Build Request<br/>Code] --> GQ[Call Groq<br/>HTTP Request]
+        GQ --> PS[Parse and Score<br/>Code: verify quotes + tier]
+    end
+
+    subgraph SC[3. Score and log]
+        ATS[ATS Score<br/>Code] --> SH[Append row in sheet<br/>Google Sheets]
+        SH --> SW{Switch<br/>by tier}
+    end
+
+    subgraph AP[4. Human approval]
+        SW -->|strong| W1[Send message and wait<br/>Gmail] --> I1{If approved} --> M1[Send a message<br/>to candidate]
+        SW -->|weak| W2[Send message and wait<br/>Gmail] --> I2{If1 approved} --> M2[Send a message1<br/>to candidate]
+        SW -->|potential| W3[Send message and wait<br/>Gmail] --> I3{If2 approved} --> M3[Send a message2<br/>to candidate]
+    end
+
+    PR --> BR
+    PS --> ATS
 ```
 
 The Groq API key lives in an n8n credential, never in the workflow file.
